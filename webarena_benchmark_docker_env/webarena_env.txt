@@ -1,0 +1,7 @@
+export SHOPPING="https://webarena-shopping.ajayp.app"
+export SHOPPING_ADMIN="https://webarena-shopping-admin.ajayp.app/admin"
+export REDDIT="https://webarena-forum.ajayp.app"
+export GITLAB="https://webarena-gitlab.ajayp.app"
+export MAP="http://ec2-3-131-244-37.us-east-2.compute.amazonaws.com:3000"
+export WIKIPEDIA="https://webarena-wikipedia.ajayp.app/wikipedia_en_all_maxi_2022-05/A/User:The_other_Kiwix_guy/Landing"
+export HOMEPAGE="https://webarena-homepage.ajayp.app"

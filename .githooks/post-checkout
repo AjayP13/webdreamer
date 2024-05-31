@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+
+# Change directory to script location
+cd "$(dirname "$0")/../" || exit
+
+# Don't track local changes to project.env
+git update-index --skip-worktree ./project.env

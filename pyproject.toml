@@ -1,0 +1,76 @@
+[tool.poetry]
+name = "webdreamer"
+version = "0.1.0"
+description = "Training LLMs as web agents with synthetic data."
+license = "MIT"
+authors= [
+    "Ajay Patel <me@ajayp.app>"
+]
+maintainers = [
+    "Ajay Patel <me@ajayp.app>"
+]
+readme = "README.md"
+homepage = "https://github.com/AjayP13/webdreamer"
+repository = "https://github.com/AjayP13/webdreamer"
+documentation = "https://github.com/AjayP13/webdreamer"
+keywords = ["machine learning", "nlp"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+packages = [
+    {include = "webdreamer"}
+]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.12"
+
+[tool.poetry.group.dev.dependencies]
+poetry = "1.4.2"
+
+[tool.ruff]
+extend-exclude = ["webarena_benchmark", "webarena_benchmark_docker_env"]
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "C90"]
+ignore = ["E203", "E501"]
+unfixable = ["B"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.pytest.ini_options]
+addopts = "-v --cov=src --cov-report term-missing --cov-report json"
+filterwarnings = ["ignore::DeprecationWarning:jupyter_client.*:"]
+
+[tool.mypy]
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+mypy_path = "src/_stubs"
+
+[[tool.mypy.overrides]]
+module = "tensorflow,torch_xla"
+ignore_missing_imports = true
+
+[tool.pyright]
+exclude = ["webarena_benchmark/", "webarena_benchmark_docker_env/", ".cluster/", ".venv/", ".venv_dev/", ".venv_poetry/", ".*/"]
+
+[tool.coverage.run]
+omit = ["src/project/*", "src/tests/*"]
