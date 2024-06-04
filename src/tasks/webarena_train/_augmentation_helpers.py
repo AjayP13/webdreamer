@@ -394,7 +394,7 @@ class GenerateSyntheticObservationsAndActions(Step):
                 response = llm.run(
                     [prompt],
                     batch_size=1,
-                    max_new_tokens=10000,
+                    max_new_tokens=3000,
                     top_p=1.0,
                     seed=random_seed,
                     log_level=logging.CRITICAL,
@@ -427,7 +427,7 @@ class GenerateSyntheticObservationsAndActions(Step):
                 response = llm.run(
                     [prompt],
                     batch_size=1,
-                    max_new_tokens=10000,
+                    max_new_tokens=3000,
                     top_p=1.0,
                     seed=random_seed,
                 )[0]
