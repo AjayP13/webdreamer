@@ -265,20 +265,20 @@ def extract_structured_synthetic_observation_and_actions(response, attempt):
     assert response.count("WEBPAGE:") == 1, "ESOA1"
     assert response.count("PREVIOUS ACTION:") == 1, "ESOA2"
     assert response.count("NEXT ACTION:") == 1, "ESOA3"
-    assert response.count("```") == 2, "ESOA4"
-    assert (
-        "```click" in response
-        or "```type" in response
-        or "```hover" in response
-        or "```scroll" in response
-        or "```stop" in response
-    ), f"ESOA5: {response}"
     response = split_by(response, "WEBPAGE:")
     response = split_by(response, "PREVIOUS ACTION:")
     response = split_by(response, "NEXT ACTION:")
     next_action = replace_past_tense_in_action(
         get_value_for_key(response, "NEXT ACTION:").strip()
     )
+    assert next_action.count("```") == 2, "ESOA4"
+    assert (
+        "```click" in next_action
+        or "```type" in next_action
+        or "```hover" in next_action
+        or "```scroll" in next_action
+        or "```stop" in next_action
+    ), f"ESOA5: {next_action}"
     assert next_action.startswith("Let's think step-by-step."), "ESOA6"
     assert re.search(r"(click|hover|type)\s*\[[A-Za-z]+", next_action) is None, "ESOA7"
     return {
@@ -409,7 +409,8 @@ class GenerateSyntheticObservationsAndActions(Step):
                     )
                     del structured_actions["observation"]
                     break
-                except AssertionError:
+                except AssertionError as e:
+                    print("ASSERTIONERROR1", e, response)
                     pass
 
             # Generate the observation (that will be kept)
@@ -437,7 +438,8 @@ class GenerateSyntheticObservationsAndActions(Step):
                         response=response, next_action=structured_actions["response"]
                     )
                     break
-                except AssertionError:
+                except AssertionError as e:
+                    print("ASSERTIONERROR2", e)
                     pass
 
             # Build the results
