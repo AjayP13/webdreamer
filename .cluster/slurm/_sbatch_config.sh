@@ -5,9 +5,8 @@
 #SBATCH --output=.cluster/slurm/.last_job/submission.out
 #SBATCH --ntasks 1
 #SBATCH --cpus-per-task 4
-#SBATCH --mem=200G
-#SBATCH --gpus=2
-#SBATCH --constraint=48GBgpu
+#SBATCH --mem=80G
+#SBATCH --gpus=1
 
 # Source the user's bashrc
 # shellcheck disable=SC1090

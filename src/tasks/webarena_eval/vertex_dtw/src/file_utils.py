@@ -28,9 +28,10 @@ def load_jsons_from_dir(results_dir, score_threshold=0.0):
     return task_trajectories
 
 
-def load_model_results(results_dir, reference_task_ids=None, score_threshold=0.0):
+def load_model_results(results_dir, reference_task_ids=None, score_threshold=0.0, filter=frozenset()):
     models = glob(f"{results_dir}/*")
     models_names = [m.split("/")[-1] for m in models]
+    models_names, models = [list(s) for s in zip(*[(a, b) for a, b in zip(models_names, models) if a in filter]) ]
     results = {}
 
     for model_name, model_dir in tqdm(

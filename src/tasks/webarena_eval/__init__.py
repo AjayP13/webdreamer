@@ -23,6 +23,7 @@ from sentence_transformers import SentenceTransformer, util
 from ._datadreamer_support import _patch_to_support_datadreamer_in_webarena
 from ._patch_webarena import _get_all_results, _patch_to_support_webarena
 from ._warnings_silencer import ignore_webarena_warnings
+from .vertex_dtw.main import compute_vertex_score
 
 
 @click.argument("provider", type=click.Choice(["openai", "huggingface", "trivial"]))
@@ -319,8 +320,10 @@ def webarena_eval_capabilities(  # noqa: C901
 
     # Get seed model names
     seed_model_names = {}
+    seed_folder_paths = {}
     for seed_folder in seed_folders:
         seed_model_names[seed_folder] = os.path.basename(seed_folder)
+        seed_folder_paths[os.path.basename(seed_folder)] = seed_folder
 
     # Get capability for each task type
     def capability_template_for_capability_idx(task_idx):
@@ -413,6 +416,8 @@ def webarena_eval_capabilities(  # noqa: C901
     ################################
     task_scores = defaultdict(list)
     capability_scores = defaultdict(list)
+    trial_weights = []
+    vertex_scores = defaultdict(list)
 
     for resample_seed in range(100):
 
@@ -452,6 +457,7 @@ def webarena_eval_capabilities(  # noqa: C901
                 # )
                 total_capabilities = 136
                 return (
+                    [int(k) for k, _ in resampled_dict_items],
                     total_tasks,
                     total_capabilities,
                     seed_model_names[seed_folder],
@@ -463,8 +469,10 @@ def webarena_eval_capabilities(  # noqa: C901
                 partial(score_for_task_idx, trivial_task_idxs), zip(seed_folders)
             )
         )
-        total_tasks, total_capabilities, _, _ = worker_pool_results[0]
-        worker_pool_final_results = [(k, v) for _, _, k, v in worker_pool_results]
+        sampled_task_idxs, total_tasks, total_capabilities, _, _ = worker_pool_results[
+            0
+        ]
+        worker_pool_final_results = [(k, v) for _, _, _, k, v in worker_pool_results]
         results_for_model = dict(worker_pool_final_results)
 
         # Get capabilities for each model
@@ -487,22 +495,43 @@ def webarena_eval_capabilities(  # noqa: C901
             task_scores[model_name].append(task_score * 100)
             capability_scores[model_name].append(capability_score * 100)
 
+        # Compute trial weights
+        trial_weights.append([0] * total_tasks)
+        for sampled_task_idx in sampled_task_idxs:
+            trial_weights[-1][sampled_task_idx] += 1
+
+    # Compute VERTEX Scores
+    for model_name in capabilities_for_model:
+        vertex_scores[model_name] = compute_vertex_score(
+            results=[seed_folder_paths[model_name]],
+            references=[
+                "../webdreamer_data/gpt-4",
+                "../webdreamer_data/gpt-4-2",
+                "../webdreamer_data/gpt-4-3",
+            ],
+            baseline="../webdreamer_data/trivial",
+            capabilities="./src/tasks/webarena_eval/vertex_dtw/task_id_to_capability_id.json",
+            trivial_tasks="./src/tasks/webarena_eval/vertex_dtw/trivial_task_ids.json",
+            trial_weights=trial_weights,
+        )[model_name]
+
     # Print evaluated capabilities
     for model_name in task_scores:
 
-        def mean_delta_95(scores):
+        def mean_delta_95(scores, round_mean=2, round_delta=2):
             mean = np.mean(scores)
             interval = st.t.interval(
                 0.95, len(scores) - 1, loc=mean, scale=st.sem(scores)
             )
             delta = interval[1] - mean
-            return round(mean, 2), round(delta, 2)
+            return round(mean, round_mean), round(delta, round_delta)
 
         t, t_d = mean_delta_95(task_scores[model_name])
         c, c_d = mean_delta_95(capability_scores[model_name])
+        v, v_d = mean_delta_95(vertex_scores[model_name], round_delta=4)
 
         logger.info(
-            f"Model name: {model_name} Task Score: {t} +/- {t_d} Capability Score: {c} +/- {c_d}"
+            f"Model name: {model_name} Task Score: {t} +/- {t_d} Capability Score: {c} +/- {c_d} VERTEX-DTW Score: {v} +/- {v_d}"
         )
 
 
