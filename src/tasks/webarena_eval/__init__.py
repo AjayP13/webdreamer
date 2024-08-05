@@ -7,6 +7,7 @@ import os
 import pathlib
 import sys
 from collections import OrderedDict, defaultdict
+from functools import partial
 from pprint import pprint
 from shutil import rmtree
 from subprocess import check_output
@@ -14,6 +15,8 @@ from time import sleep
 
 import click
 import multiprocess
+import numpy as np
+import scipy.stats as st
 from loguru import logger
 from sentence_transformers import SentenceTransformer, util
 
@@ -405,84 +408,102 @@ def webarena_eval_capabilities(  # noqa: C901
     )
     logger.info("=============================\n\n")
 
-    # Get results for each model
-    def score_for_task_idx(seed_folder):
-        with open(
-            os.path.join(seed_folder, "results", "all_results.json"), "r"
-        ) as all_results_fp:
-            return (
-                seed_model_names[seed_folder],
-                set([int(k) for k, v in json.load(all_results_fp).items() if v == 1.0]),
+    ################################
+    # Re-sampling bootstrapping trials
+    ################################
+    task_scores = defaultdict(list)
+    capability_scores = defaultdict(list)
+
+    for resample_seed in range(100):
+
+        def sample_dict_items_with_replacement(original_dict):
+            from random import Random
+
+            r = Random(resample_seed)
+            items = list(original_dict.items())
+            sampled_items = [
+                items[r.randint(0, len(items) - 1)] for _ in range(len(items))
+            ]
+            return sampled_items
+
+        # Filter trivial results
+        trivial_task_idxs = [22, 24, 101, 115, 166, 218, 219, 183, 168, 201, 191, 253, 225, 247, 234, 235, 301, 302, 313, 382, 368, 376, 491, 723, 726, 772, 790, 783, 789, 792, 793, 794, 795, 796, 797, 798, 791, 8]  # fmt: off
+
+        # Get results for each model
+        def score_for_task_idx(trivial_task_idxs, seed_folder):
+            with open(
+                os.path.join(seed_folder, "results", "all_results.json"), "r"
+            ) as all_results_fp:
+                resampled_dict_items = sample_dict_items_with_replacement(
+                    json.load(all_results_fp)
+                )
+                total_tasks = len(resampled_dict_items)
+                # total_capabilities = (
+                #     len(
+                #         set(
+                #             [
+                #                 capability_idx_to_group(task_idx_to_capability[int(k)])
+                #                 for k, _ in resampled_dict_items
+                #                 if not filter_trivial or k not in trivial_task_idxs
+                #             ]
+                #         )
+                #     )
+                #     * 0.94444444  # (Due to small bug in computation)
+                # )
+                total_capabilities = 136
+                return (
+                    total_tasks,
+                    total_capabilities,
+                    seed_model_names[seed_folder],
+                    list([int(k) for k, v in resampled_dict_items if v == 1.0]),
+                )
+
+        worker_pool_results = list(
+            worker_pool.starmap(
+                partial(score_for_task_idx, trivial_task_idxs), zip(seed_folders)
+            )
+        )
+        total_tasks, total_capabilities, _, _ = worker_pool_results[0]
+        worker_pool_final_results = [(k, v) for _, _, k, v in worker_pool_results]
+        results_for_model = dict(worker_pool_final_results)
+
+        # Get capabilities for each model
+        capabilities_for_model = {}
+        for model_name in results_for_model:
+            capabilities_for_model[model_name] = set(
+                [
+                    capability_idx_to_group(task_idx_to_capability[task_idx])
+                    for task_idx in results_for_model[model_name]
+                    if not filter_trivial or task_idx not in trivial_task_idxs
+                ]
             )
 
-    results_for_model = dict(worker_pool.starmap(score_for_task_idx, zip(seed_folders)))
-
-    # Filter trivial results
-    trivial_task_idxs = [22, 24, 101, 115, 166, 218, 219, 183, 168, 201, 191, 253, 225, 247, 234, 235, 301, 302, 313, 382, 368, 376, 491, 723, 726, 772, 790, 783, 789, 792, 793, 794, 795, 796, 797, 798, 791, 8]  # fmt: off
-    trivial_results_for_model = defaultdict(set)
-    for model_name in results_for_model:
-        for task_idx in results_for_model[model_name].copy():
-            if task_idx in trivial_task_idxs:
-                if filter_trivial:
-                    results_for_model[model_name].remove(task_idx)
-                trivial_results_for_model[model_name].add(task_idx)
-
-    # Get capabilities for each model
-    capabilities_for_model = {}
-    for model_name in results_for_model:
-        capabilities_for_model[model_name] = set(
-            [
-                capability_idx_to_group(task_idx_to_capability[task_idx])
-                for task_idx in results_for_model[model_name]
-            ]
-        )
+        # Compute scores
+        for model_name in capabilities_for_model:
+            task_score = len(results_for_model[model_name]) / total_tasks
+            capability_score = (
+                len(capabilities_for_model[model_name]) / total_capabilities
+            )
+            task_scores[model_name].append(task_score * 100)
+            capability_scores[model_name].append(capability_score * 100)
 
     # Print evaluated capabilities
-    for model_name in capabilities_for_model:
-        logger.info(
-            f"Model name: {model_name}   Task Count: {len(results_for_model[model_name])}   Capabilities Count: {len(capabilities_for_model[model_name])} Trivial %: {len(trivial_results_for_model[model_name]) / len(results_for_model[model_name].union(trivial_results_for_model[model_name]))}"
-        )
+    for model_name in task_scores:
 
-    for model_a, model_b in itertools.permutations(seed_model_names.values(), 2):
-        a_cap = capabilities_for_model[model_a]
-        b_cap = capabilities_for_model[model_b]
-        enables = list(a_cap.difference(b_cap))
-        loses = list(b_cap.difference(a_cap))
-        logger.info("=============================")
+        def mean_delta_95(scores):
+            mean = np.mean(scores)
+            interval = st.t.interval(
+                0.95, len(scores) - 1, loc=mean, scale=st.sem(scores)
+            )
+            delta = interval[1] - mean
+            return round(mean, 2), round(delta, 2)
+
+        t, t_d = mean_delta_95(task_scores[model_name])
+        c, c_d = mean_delta_95(capability_scores[model_name])
+
         logger.info(
-            f"Model name: {model_a} vs. {model_b} enables {len(enables)} capabilities: {enables}  and loses {len(loses)} capabilities: {loses}"
+            f"Model name: {model_name} Task Score: {t} +/- {t_d} Capability Score: {c} +/- {c_d}"
         )
-        print("\n\nEnables:", file=sys.stderr)
-        for capability_group_idx in enables:
-            task_idxs = [
-                str(task_idx)
-                for task_idx in results_for_model[model_a]
-                if capability_idx_to_group(task_idx_to_capability[task_idx])
-                == capability_group_idx
-            ]
-            print(
-                capability_idx_to_template[task_idx_to_capability[int(task_idxs[0])]][
-                    "template"
-                ]
-                + f" ({', '.join(task_idxs)})",
-                file=sys.stderr,
-            )
-        print("\n\nDisables:", file=sys.stderr)
-        for capability_group_idx in loses:
-            task_idxs = [
-                str(task_idx)
-                for task_idx in results_for_model[model_b]
-                if capability_idx_to_group(task_idx_to_capability[task_idx])
-                == capability_group_idx
-            ]
-            print(
-                capability_idx_to_template[task_idx_to_capability[int(task_idxs[0])]][
-                    "template"
-                ]
-                + f" ({', '.join(task_idxs)})",
-                file=sys.stderr,
-            )
-        logger.info("=============================\n\n")
 
 
 __all__ = ["webarena_eval", "webarena_eval_gupload", "webarena_eval_capabilities"]
